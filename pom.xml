@@ -8,10 +8,10 @@
         <version>2.7.18</version>
         <relativePath/>
     </parent>
-    <groupId>com.tiansuo</groupId>
-    <artifactId>file-manage</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>file-manage</name>
+    <groupId>com.tiansuo.file.storage</groupId>
+    <artifactId>file-storage-boot</artifactId>
+    <version>1.0.0</version>
+    <name>file-storage-boot</name>
     <description>文件管理服务_springboot</description>
     <properties>
         <java.version>1.8</java.version>
