@@ -18,6 +18,7 @@ import com.tiansuo.file.storage.model.bo.CreateUploadUrlRespBO;
 
 import com.tiansuo.file.storage.model.entity.FileMetadataInfo;
 import com.tiansuo.file.storage.model.vo.*;
+import com.tiansuo.file.storage.response.ResultModel;
 import com.tiansuo.file.storage.service.MinioS3Client;
 import com.tiansuo.file.storage.service.StorageService;
 import com.tiansuo.file.storage.util.CommonUtil;
@@ -50,15 +51,6 @@ import java.util.*;
 @Service
 public class StorageServiceImpl implements StorageService {
 
-    /**
-     * 文件元数据服务接口定义
-     */
-    @Autowired
-    private MetadataMapper fileMetadataMapper;
-
-    /**
-     * MinioPlus配置信息注入类
-     */
     @Autowired
     private MinioPlusProperties properties;
 
@@ -248,7 +240,8 @@ public class StorageServiceImpl implements StorageService {
         try {
             // 文件权限校验，元数据为抛出异常
             if (Objects.isNull(metadata)) {
-                throw new MinioPlusException(MinioPlusErrorCode.FILE_EXIST_FAILED.getCode(), fileKey + MinioPlusErrorCode.FILE_EXIST_FAILED.getMessage());
+                log.error(MinioPlusErrorCode.FILE_EXIST_FAILED.getMessage());
+                throw new MinioPlusException(MinioPlusErrorCode.FILE_EXIST_FAILED);
             }
             downloadUrl = minioS3Client.getDownloadUrl(metadata.getFileName(), metadata.getFileMimeType(), metadata.getStorageBucket(), metadata.getStoragePath() + CommonConstant.STRING_FXG + metadata.getFileMd5());
         } catch (Exception e) {
@@ -313,7 +306,7 @@ public class StorageServiceImpl implements StorageService {
         String previewUrl;
         // 元数据为抛出异常
         if (Objects.isNull(metadata)) {
-            log.info(MinioPlusErrorCode.FILE_EXIST_FAILED.getCode()+fileKey + MinioPlusErrorCode.FILE_EXIST_FAILED.getMessage());
+            log.info(MinioPlusErrorCode.FILE_EXIST_FAILED.getCode() + fileKey + MinioPlusErrorCode.FILE_EXIST_FAILED.getMessage());
 
             throw new MinioPlusException(MinioPlusErrorCode.FILE_EXIST_FAILED.getCode(), fileKey + MinioPlusErrorCode.FILE_EXIST_FAILED.getMessage());
         }
@@ -333,7 +326,6 @@ public class StorageServiceImpl implements StorageService {
         }
         return remakeUrl(previewUrl);
     }
-
 
 
     @Override
@@ -438,45 +430,55 @@ public class StorageServiceImpl implements StorageService {
     @Override
     public Boolean deleteFileByBusinessKey(String businessKey) {
         //先删除绑定关系,在判断fileMd5是否有其他业务在使用此文件
-        LambdaQueryWrapper<FileMetadataInfo> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(FileMetadataInfo::getBusinessKey, businessKey);
-        List<FileMetadataInfo> list = metadataMapper.selectList(queryWrapper);
-        list.forEach(a -> {
-            LambdaQueryWrapper<FileMetadataInfo> queryWrapper2 = new LambdaQueryWrapper<>();
-            queryWrapper2.eq(FileMetadataInfo::getFileMd5, a.getFileMd5());
-            queryWrapper2.ne(FileMetadataInfo::getFileKey, a.getFileKey());
-            List<FileMetadataInfo> fileMetadataInfoList = metadataMapper.selectList(queryWrapper2);
-            if (CollectionUtils.isEmpty(fileMetadataInfoList)) {
-                //删除元数据以及minio中的文件
-                this.deleteMetadataAndMinioFile(a);
-            } else {
-                //只删除元数据
-                this.deleteMetadataOnly(a);
-            }
-        });
-        return true;
+        try {
+            LambdaQueryWrapper<FileMetadataInfo> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(FileMetadataInfo::getBusinessKey, businessKey);
+            List<FileMetadataInfo> list = metadataMapper.selectList(queryWrapper);
+            list.forEach(a -> {
+                LambdaQueryWrapper<FileMetadataInfo> queryWrapper2 = new LambdaQueryWrapper<>();
+                queryWrapper2.eq(FileMetadataInfo::getFileMd5, a.getFileMd5());
+                queryWrapper2.ne(FileMetadataInfo::getFileKey, a.getFileKey());
+                List<FileMetadataInfo> fileMetadataInfoList = metadataMapper.selectList(queryWrapper2);
+                if (CollectionUtils.isEmpty(fileMetadataInfoList)) {
+                    //删除元数据以及minio中的文件
+                    this.deleteMetadataAndMinioFile(a);
+                } else {
+                    //只删除元数据
+                    this.deleteMetadataOnly(a);
+                }
+            });
+            return true;
+        } catch (Exception e) {
+            log.error("根据业务key删除失败:", e);
+            throw new MinioPlusException(MinioPlusErrorCode.FILE_DEL_BY_BUSINESS_KEY_FAILED);
+        }
     }
 
     @Override
     public Boolean deleteFileByFileKey(String fileKey) {
         //先删除绑定关系,在判断fileMd5是否有其他业务在使用此文件
-        LambdaQueryWrapper<FileMetadataInfo> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(FileMetadataInfo::getFileKey, fileKey);
-        FileMetadataInfo metadataInfo = metadataMapper.selectOne(queryWrapper);
-        if (Objects.nonNull(metadataInfo)) {
-            LambdaQueryWrapper<FileMetadataInfo> queryWrapper2 = new LambdaQueryWrapper<>();
-            queryWrapper2.eq(FileMetadataInfo::getFileMd5, metadataInfo.getFileMd5());
-            queryWrapper2.ne(FileMetadataInfo::getFileKey, metadataInfo.getFileKey());
-            List<FileMetadataInfo> list = metadataMapper.selectList(queryWrapper2);
-            if (CollectionUtils.isNotEmpty(list)) {
-                //有其他原数据在使用此文件,则不删除minio中文件,仅删除原数据
-                this.deleteMetadataOnly(metadataInfo);
-            } else {
-                //删除元数据以及minio中的文件
-                this.deleteMetadataAndMinioFile(metadataInfo);
+        try {
+            LambdaQueryWrapper<FileMetadataInfo> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(FileMetadataInfo::getFileKey, fileKey);
+            FileMetadataInfo metadataInfo = metadataMapper.selectOne(queryWrapper);
+            if (Objects.nonNull(metadataInfo)) {
+                LambdaQueryWrapper<FileMetadataInfo> queryWrapper2 = new LambdaQueryWrapper<>();
+                queryWrapper2.eq(FileMetadataInfo::getFileMd5, metadataInfo.getFileMd5());
+                queryWrapper2.ne(FileMetadataInfo::getFileKey, metadataInfo.getFileKey());
+                List<FileMetadataInfo> list = metadataMapper.selectList(queryWrapper2);
+                if (CollectionUtils.isNotEmpty(list)) {
+                    //有其他原数据在使用此文件,则不删除minio中文件,仅删除原数据
+                    this.deleteMetadataOnly(metadataInfo);
+                } else {
+                    //删除元数据以及minio中的文件
+                    this.deleteMetadataAndMinioFile(metadataInfo);
+                }
             }
+            return true;
+        } catch (Exception e) {
+            log.error("根据业务key删除失败:", e);
+            throw new MinioPlusException(MinioPlusErrorCode.FILE_DEL_BY_FILE_KEY_FAILED);
         }
-        return true;
     }
 
     /**
@@ -535,7 +537,7 @@ public class StorageServiceImpl implements StorageService {
         // 分片数量
         fileMetadataInfo.setPartNumber(CommonConstant.INTEGER_NO);
         // 预览图 0:无 1:有,图片类型默认有缩略图
-        fileMetadataInfo.setIsPreview(StorageBucketEnums.IMAGE.getCode().equals(bucketName)?CommonConstant.INTEGER_YES:CommonConstant.INTEGER_NO);
+        fileMetadataInfo.setIsPreview(StorageBucketEnums.IMAGE.getCode().equals(bucketName) ? CommonConstant.INTEGER_YES : CommonConstant.INTEGER_NO);
         // 是否私有 0:否 1:是
         fileMetadataInfo.setIsPrivate(CommonConstant.INTEGER_NO);
         metadataMapper.insert(fileMetadataInfo);

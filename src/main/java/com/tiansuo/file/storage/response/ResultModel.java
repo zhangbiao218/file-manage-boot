@@ -1,5 +1,6 @@
 package com.tiansuo.file.storage.response;
 
+import com.tiansuo.file.storage.enums.MinioPlusErrorCode;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -35,13 +36,12 @@ public class ResultModel<T>  {
         return res;
     }
 
-    public boolean isSuccess() {
-        return Objects.equals(ReturnCodeEnum.RC200.getCode(), code);
+    public static ResultModel fail(MinioPlusErrorCode minioPlusErrorCode){
+        ResultModel res = new ResultModel();
+        res.setCode(minioPlusErrorCode.getCode());
+        res.setMessage(minioPlusErrorCode.getMessage());
+        res.setData(null);
+        return res;
     }
-    public T computeOrThrow(String message) {
-        if (!isSuccess()) {
-            throw new RuntimeException(message);
-        }
-        return data;
-    }
+
 }
